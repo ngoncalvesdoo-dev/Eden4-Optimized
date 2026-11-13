@@ -1,0 +1,67 @@
+name: Repack Eden4 Optimized PS4 PKG
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  repack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository files
+        uses: actions/checkout@v4
+
+      - name: Download OpenOrbis PkgTool and Base PKG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y unzip tar python3
+          mkdir -p tools base_pkg extracted
+          gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D tools
+          FILE=$(ls tools/* | head -n 1)
+          if [[ "$FILE" == *.zip ]]; then
+            sudo unzip -q "$FILE" -d /opt/OpenOrbis
+          else
+            sudo tar -xzf "$FILE" -C /opt/OpenOrbis
+          fi
+          
+          # Download the base PKG from repository releases
+          gh release download -R ngoncalvesdoo-dev/Eden4-Optimized -D base_pkg || true
+          ls -la base_pkg/
+
+      - name: Inject Custom Configs and Update App Name
+        run: |
+          PKG_IN=$(find base_pkg -name "*.pkg" | head -n 1)
+          if [ -z "$PKG_IN" ]; then
+            echo "No PKG file found in repository releases."
+            exit 1
+          fi
+
+          # Extract original PKG while keeping original icon intact
+          /opt/OpenOrbis/bin/linux/PkgTool.Core pkg_extract "$PKG_IN" extracted/
+
+          # Copy all custom configuration files (.ini) into the PKG
+          cp -fv *.ini extracted/ 2>/dev/null || true
+          if [ -d "config" ]; then
+            cp -rfv config/* extracted/ 2>/dev/null || true
+          fi
+
+          # Update application title in param.sfo for PS4 menu
+          python3 -c '
+          with open("extracted/sce_sys/param.sfo", "rb") as f:
+              data = f.read()
+          data = data.replace(b"Eden4", b"Eden4 Optimized").replace(b"yuzu", b"Eden4 Optimized")
+          with open("extracted/sce_sys/param.sfo", "wb") as f:
+              f.write(data)
+          '
+
+          # Build final modified PS4 PKG
+          /opt/OpenOrbis/bin/linux/PkgTool.Core pkg_build extracted/sce_sys/param.sfo extracted/ Eden4-Optimized-PS4.pkg
+
+      - name: Upload Final Modified PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eden4-Optimized-PS4-PKG
+          path: Eden4-Optimized-PS4.pkg
