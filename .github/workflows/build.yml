@@ -1,4 +1,4 @@
-name: Build PS4 PKG
+name: Build Eden4 PS4 Slim & Base
 
 on:
   push:
@@ -8,21 +8,51 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: openorbis/toolchain:latest
 
     steps:
-      - name: Checkout repository code
+      - name: Checkout repository and submodules
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Compile project and build PKG
+      - name: Install OpenOrbis PS4 Toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config
+          mkdir -p toolchain_dl
+          gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D toolchain_dl
+          sudo mkdir -p /opt/OpenOrbis
+          FILE=$(ls toolchain_dl/* | head -n 1)
+          echo "Extracting $FILE"
+          if [[ "$FILE" == *.zip ]]; then
+            sudo unzip -q "$FILE" -d /opt/OpenOrbis
+          else
+            sudo tar -xzf "$FILE" -C /opt/OpenOrbis
+          fi
+          echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis" >> $GITHUB_ENV
+
+      - name: Configure and Compile for PS4 Base/Slim
         run: |
           mkdir -p build && cd build
-          cmake ..
-          make
+          cmake .. -G Ninja \
+            -DPS4=ON \
+            -DYUZU_PS4=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math" \
+            -DCMAKE_CXX_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math" \
+            -DYUZU_ENABLE_LTO=ON \
+            -DENABLE_QT=OFF \
+            -DENABLE_RESHADE=OFF \
+            -DENABLE_DEBUG_TOOLS=OFF \
+            -DENABLE_WEB_SERVICE=OFF \
+            -DUSE_DISCORD_PRESENCE=OFF \
+            -DBUILD_TESTING=OFF
+          ninja
 
-      - name: Upload generated PKG artifact
+      - name: Upload PS4 PKG Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eden-Otimizado-PKG
+          name: Eden4-PS4-Slim-Base-PKG
           path: "**/*.pkg"
