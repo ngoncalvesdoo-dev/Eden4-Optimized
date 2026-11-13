@@ -20,7 +20,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config
+          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config libudev-dev
           mkdir -p toolchain_dl
           gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D toolchain_dl
           sudo mkdir -p /opt/OpenOrbis
@@ -34,17 +34,19 @@ jobs:
 
       - name: Configure and Compile for PS4 Base/Slim
         run: |
-          SRC_DIR=$(find . -maxdepth 3 -name "CMakeLists.txt" | awk '{ print length, $0 }' | sort -n | head -n 1 | cut -d" " -f2- | xargs dirname)
-          echo "Pasta encontrada com CMakeLists.txt: $SRC_DIR"
-          cd "$SRC_DIR"
+          TOOLCHAIN_FILE=$(find /opt/OpenOrbis -iname "*toolchain*.cmake" | head -n 1)
+          echo "Toolchain encontrado: $TOOLCHAIN_FILE"
+          cd eden
           mkdir -p build && cd build
           cmake .. -G Ninja \
+            ${TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"} \
             -DPS4=ON \
             -DYUZU_PS4=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math" \
             -DCMAKE_CXX_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math" \
             -DYUZU_ENABLE_LTO=ON \
+            -DENABLE_LIBUSB=OFF \
             -DENABLE_QT=OFF \
             -DENABLE_RESHADE=OFF \
             -DENABLE_DEBUG_TOOLS=OFF \
