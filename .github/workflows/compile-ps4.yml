@@ -35,8 +35,11 @@ jobs:
       - name: Configure and Compile for PS4 Base/Slim
         run: |
           cd eden
+          PS4_CMAKE=$(find . /opt/OpenOrbis -iname "*ps4*.cmake" -o -iname "*openorbis*.cmake" | head -n 1)
+          echo "Arquivo PS4 CMake encontrado: $PS4_CMAKE"
           mkdir -p build && cd build
           cmake .. -G Ninja \
+            ${PS4_CMAKE:+-DCMAKE_TOOLCHAIN_FILE="$PS4_CMAKE"} \
             -DPS4=ON \
             -DYUZU_PS4=ON \
             -DCMAKE_BUILD_TYPE=Release \
