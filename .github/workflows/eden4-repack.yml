@@ -27,15 +27,15 @@ jobs:
             sudo tar -xzf "$FILE" -C /opt/OpenOrbis
           fi
           
-          # Download the base PKG from repository releases
-          gh release download -R ngoncalvesdoo-dev/Eden4-Optimized -D base_pkg || true
+          # Download your base PKG from V1.1 release
+          gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -p "*.pkg" -D base_pkg
           ls -la base_pkg/
 
       - name: Inject Custom Configs and Update App Name
         run: |
           PKG_IN=$(find base_pkg -name "*.pkg" | head -n 1)
           if [ -z "$PKG_IN" ]; then
-            echo "No PKG file found in repository releases."
+            echo "No PKG file found in V1.1 release."
             exit 1
           fi
 
@@ -58,10 +58,11 @@ jobs:
           '
 
           # Build final modified PS4 PKG
-          /opt/OpenOrbis/bin/linux/PkgTool.Core pkg_build extracted/sce_sys/param.sfo extracted/ Eden4-Optimized-PS4.pkg
+          /opt/OpenOrbis/bin/linux/PkgTool.Core pkg_build extracted/sce_sys/param.sfo extracted/ Eden4-PS4-Slim-Base-Optimized.pkg
 
       - name: Upload Final Modified PKG
         uses: actions/upload-artifact@v4
         with:
-          name: Eden4-Optimized-PS4-PKG
-          path: Eden4-Optimized-PS4.pkg
+          name: Eden4-PS4-Slim-Base-Optimized-PKG
+          path: Eden4-PS4-Slim-Base-Optimized.pkg
+   
