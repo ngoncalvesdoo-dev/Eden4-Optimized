@@ -33,6 +33,10 @@ jobs:
 
       - name: Inject Custom Configs and Update App Name
         run: |
+          PKGTOOL=$(find /opt/OpenOrbis -name "PkgTool.Core" | head -n 1)
+          echo "Found PkgTool at: $PKGTOOL"
+          sudo chmod +x "$PKGTOOL"
+
           PKG_IN=$(find base_pkg -name "*.pkg" | head -n 1)
           if [ -z "$PKG_IN" ]; then
             echo "No PKG file found in V1.1 release."
@@ -40,7 +44,7 @@ jobs:
           fi
 
           # Extract original PKG while keeping original icon intact
-          /opt/OpenOrbis/bin/linux/PkgTool.Core pkg_extract "$PKG_IN" extracted/
+          "$PKGTOOL" pkg_extract "$PKG_IN" extracted/
 
           # Copy all custom configuration files (.ini) into the PKG
           cp -fv *.ini extracted/ 2>/dev/null || true
@@ -58,11 +62,10 @@ jobs:
           '
 
           # Build final modified PS4 PKG
-          /opt/OpenOrbis/bin/linux/PkgTool.Core pkg_build extracted/sce_sys/param.sfo extracted/ Eden4-PS4-Slim-Base-Optimized.pkg
+          "$PKGTOOL" pkg_build extracted/sce_sys/param.sfo extracted/ Eden4-PS4-Slim-Base-Optimized.pkg
 
       - name: Upload Final Modified PKG
         uses: actions/upload-artifact@v4
         with:
           name: Eden4-PS4-Slim-Base-Optimized-PKG
           path: Eden4-PS4-Slim-Base-Optimized.pkg
-   
