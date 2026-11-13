@@ -20,7 +20,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config libudev-dev nasm yasm autoconf automake libtool
+          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config libudev-dev nasm yasm autoconf automake libtool glslang-tools spirv-tools
           mkdir -p toolchain_dl
           gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D toolchain_dl
           sudo mkdir -p /opt/OpenOrbis
@@ -60,10 +60,14 @@ jobs:
             -DENABLE_WEB_SERVICE=OFF \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DBUILD_TESTING=OFF
-          ninja
+          ninja -j$(nproc)
 
       - name: Upload PS4 PKG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Eden4-PS4-Slim-Base-PKG
-          path: "**/*.pkg"
+          path: |
+            **/*.pkg
+            **/eboot.bin
+            **/*.elf
+          if-no-files-found: warn
