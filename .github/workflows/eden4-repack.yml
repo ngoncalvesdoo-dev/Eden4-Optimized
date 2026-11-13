@@ -34,6 +34,8 @@ jobs:
           ls -la base_pkg/
 
       - name: Inject Custom Configs and Update App Name
+        env:
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
         run: |
           PKGTOOL=$(find tools/pkgtool -iname "*PkgTool*" -type f | head -n 1)
           echo "Found PkgTool at: $PKGTOOL"
