@@ -13,18 +13,20 @@ jobs:
       - name: Checkout repository files
         uses: actions/checkout@v4
 
-      - name: Download OpenOrbis PkgTool and Base PKG
+      - name: Download LibOrbisPkg and Base PKG
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update && sudo apt-get install -y unzip tar python3
           mkdir -p tools base_pkg extracted
-          gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D tools
+          
+          # Download official LibOrbisPkg (PkgTool.Core) for Linux
+          gh release download -R maxton/LibOrbisPkg -p "*linux*" -D tools || gh release download -R OpenOrbis/LibOrbisPkg -p "*linux*" -D tools
           FILE=$(ls tools/* | head -n 1)
           if [[ "$FILE" == *.zip ]]; then
-            sudo unzip -q "$FILE" -d /opt/OpenOrbis
+            unzip -q "$FILE" -d tools/pkgtool
           else
-            sudo tar -xzf "$FILE" -C /opt/OpenOrbis
+            mkdir -p tools/pkgtool && tar -xzf "$FILE" -C tools/pkgtool
           fi
           
           # Download your base PKG from V1.1 release
@@ -33,9 +35,9 @@ jobs:
 
       - name: Inject Custom Configs and Update App Name
         run: |
-          PKGTOOL=$(find /opt/OpenOrbis -name "PkgTool.Core" | head -n 1)
+          PKGTOOL=$(find tools/pkgtool -iname "*PkgTool*" -type f | head -n 1)
           echo "Found PkgTool at: $PKGTOOL"
-          sudo chmod +x "$PKGTOOL"
+          chmod +x "$PKGTOOL"
 
           PKG_IN=$(find base_pkg -name "*.pkg" | head -n 1)
           if [ -z "$PKG_IN" ]; then
