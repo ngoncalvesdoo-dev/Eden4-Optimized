@@ -13,13 +13,19 @@ jobs:
       - name: Checkout repository code
         uses: actions/checkout@v4
 
-      - name: Install OpenOrbis PS4 Toolchain v0.5.4
+      - name: Install OpenOrbis PS4 Toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake clang lld wget tar
-          wget https://github.com
+          sudo apt-get install -y cmake clang lld curl jq tar unzip
+          DOWNLOAD_URL=$(curl -s https://github.com | jq -r '.assets[] | select(.name | endswith(".tar.gz") or endswith(".zip")) | .browser_download_url' | head -n 1)
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L "$DOWNLOAD_URL" -o toolchain_pkg
           sudo mkdir -p /opt/OpenOrbis
-          sudo tar -xzf toolchain-llvm-18.tar.gz -C /opt/OpenOrbis
+          if [[ "$DOWNLOAD_URL" == *.zip ]]; then
+            sudo unzip -q toolchain_pkg -d /opt/OpenOrbis
+          else
+            sudo tar -xzf toolchain_pkg -C /opt/OpenOrbis
+          fi
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis" >> $GITHUB_ENV
 
       - name: Compile project and build PKG
