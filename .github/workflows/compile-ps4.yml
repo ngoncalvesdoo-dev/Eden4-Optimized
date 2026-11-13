@@ -20,14 +20,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang lld unzip pkg-config
-          gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -p "*Linux*" -O toolchain.zip
+          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config
+          mkdir -p toolchain_dl
+          gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D toolchain_dl
           sudo mkdir -p /opt/OpenOrbis
-          sudo unzip -q toolchain.zip -d /opt/OpenOrbis
+          FILE=$(ls toolchain_dl/* | head -n 1)
+          if [[ "$FILE" == *.zip ]]; then
+            sudo unzip -q "$FILE" -d /opt/OpenOrbis
+          else
+            sudo tar -xzf "$FILE" -C /opt/OpenOrbis
+          fi
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis" >> $GITHUB_ENV
 
       - name: Configure and Compile for PS4 Base/Slim
         run: |
+          SRC_DIR=$(find . -maxdepth 3 -name "CMakeLists.txt" | awk '{ print length, $0 }' | sort -n | head -n 1 | cut -d" " -f2- | xargs dirname)
+          echo "Pasta encontrada com CMakeLists.txt: $SRC_DIR"
+          cd "$SRC_DIR"
           mkdir -p build && cd build
           cmake .. -G Ninja \
             -DPS4=ON \
