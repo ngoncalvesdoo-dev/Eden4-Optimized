@@ -1,4 +1,4 @@
-name: Build Eden4 PS4 Slim & Base
+ name: Build Eden4 PS4 Slim & Base
 
 on:
   push:
@@ -15,12 +15,20 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install OpenOrbis PS4 Toolchain
+      - name: Install OpenOrbis PS4 Toolchain and Full Build Dependencies
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang lld unzip tar pkg-config libudev-dev
+          sudo apt-get install -y \
+            build-essential cmake ninja-build clang lld llvm \
+            git curl wget unzip tar pkg-config ccache \
+            nasm yasm autoconf automake libtool meson \
+            libssl-dev libudev-dev zlib1g-dev liblz4-dev libzstd-dev \
+            libfmt-dev libboost-all-dev nlohmann-json3-dev \
+            glslang-tools spirv-tools libvulkan-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev \
+            libsdl2-dev libusb-1.0-0-dev
           mkdir -p toolchain_dl
           gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -D toolchain_dl
           sudo mkdir -p /opt/OpenOrbis
@@ -32,27 +40,25 @@ jobs:
           fi
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis" >> $GITHUB_ENV
 
-      - name: Configure and Compile for PS4 Base/Slim
+      - name: Configure and Compile Eden4 for PS4 Slim & Base
         run: |
-          TOOLCHAIN_FILE=$(find /opt/OpenOrbis -iname "*toolchain*.cmake" | head -n 1)
-          echo "Toolchain encontrado: $TOOLCHAIN_FILE"
           cd eden
           mkdir -p build && cd build
           cmake .. -G Ninja \
-            ${TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE"} \
             -DPS4=ON \
             -DYUZU_PS4=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math -DBOOST_ASIO_DISABLE_KQUEUE" \
             -DCMAKE_CXX_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math -DBOOST_ASIO_DISABLE_KQUEUE" \
             -DYUZU_ENABLE_LTO=ON \
-            -DYUZU_CMD=OFF \
-            -DYUZU_ROOM=OFF \
+            -DYUZU_USE_BUNDLED_FFMPEG=ON \
+            -DYUZU_USE_BUNDLED_SDL2=OFF \
+            -DYUZU_USE_BUNDLED_SDL3=OFF \
+            -DYUZU_USE_EXTERNAL_VULKAN_HEADERS=ON \
+            -DYUZU_USE_EXTERNAL_VULKAN_UTILITY_LIBRARIES=ON \
             -DENABLE_QT=OFF \
             -DENABLE_QT_TRANSLATION=OFF \
             -DENABLE_SDL2=OFF \
-            -DYUZU_USE_BUNDLED_SDL2=OFF \
-            -DYUZU_USE_BUNDLED_SDL3=OFF \
             -DENABLE_CUBEB=OFF \
             -DENABLE_LIBUSB=OFF \
             -DENABLE_RESHADE=OFF \
@@ -60,10 +66,18 @@ jobs:
             -DENABLE_WEB_SERVICE=OFF \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DBUILD_TESTING=OFF
-          ninja
+          ninja -j$(nproc)
+
+      - name: Package PS4 PKG if generated
+        run: |
+          find . -maxdepth 4 -type f \( -name "*.pkg" -o -name "*.elf" -o -name "*.self" -o -name "eboot.bin" \)
 
       - name: Upload PS4 PKG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Eden4-PS4-Slim-Base-PKG
-          path: "**/*.pkg"
+          path: |
+            **/*.pkg
+            **/eboot.bin
+            **/*.elf
+          if-no-files-found: warn
