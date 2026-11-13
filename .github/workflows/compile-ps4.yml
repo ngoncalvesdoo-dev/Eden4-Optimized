@@ -1,4 +1,4 @@
-name: Build PS4 PKG
+name: Build Eden4 PS4 Slim & Base
 
 on:
   push:
@@ -10,32 +10,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository code
+      - name: Checkout repository and submodules
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install OpenOrbis PS4 Toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake clang lld curl jq tar unzip
-          DOWNLOAD_URL=$(curl -s https://github.com | jq -r '.assets[] | select(.name | endswith(".tar.gz") or endswith(".zip")) | .browser_download_url' | head -n 1)
-          echo "Downloading from: $DOWNLOAD_URL"
-          curl -L "$DOWNLOAD_URL" -o toolchain_pkg
+          sudo apt-get install -y cmake ninja-build clang lld unzip pkg-config
+          gh release download v0.5.3 -R OpenOrbis/OpenOrbis-PS4-Toolchain -p "*Linux*" -O toolchain.zip
           sudo mkdir -p /opt/OpenOrbis
-          if [[ "$DOWNLOAD_URL" == *.zip ]]; then
-            sudo unzip -q toolchain_pkg -d /opt/OpenOrbis
-          else
-            sudo tar -xzf toolchain_pkg -C /opt/OpenOrbis
-          fi
+          sudo unzip -q toolchain.zip -d /opt/OpenOrbis
           echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis" >> $GITHUB_ENV
 
-      - name: Compile project and build PKG
+      - name: Configure and Compile for PS4 Base/Slim
         run: |
-          mkdir build && cd build
-          cmake ..
-          make
+          mkdir -p build && cd build
+          cmake .. -G Ninja \
+            -DPS4=ON \
+            -DYUZU_PS4=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math" \
+            -DCMAKE_CXX_FLAGS="-O3 -march=btver2 -mtune=btver2 -ffast-math" \
+            -DYUZU_ENABLE_LTO=ON \
+            -DENABLE_QT=OFF \
+            -DENABLE_RESHADE=OFF \
+            -DENABLE_DEBUG_TOOLS=OFF \
+            -DENABLE_WEB_SERVICE=OFF \
+            -DUSE_DISCORD_PRESENCE=OFF \
+            -DBUILD_TESTING=OFF
+          ninja
 
-      - name: Upload generated PKG artifact
+      - name: Upload PS4 PKG Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eden-Otimizado-PKG
+          name: Eden4-PS4-Slim-Base-PKG
           path: "**/*.pkg"
