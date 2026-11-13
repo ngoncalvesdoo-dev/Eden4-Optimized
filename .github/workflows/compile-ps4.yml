@@ -1,0 +1,35 @@
+name: Build PS4 PKG
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Install OpenOrbis PS4 Toolchain v0.5.4
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang lld wget tar
+          wget https://github.com
+          sudo mkdir -p /opt/OpenOrbis
+          sudo tar -xzf toolchain-llvm-18.tar.gz -C /opt/OpenOrbis
+          echo "OO_PS4_TOOLCHAIN=/opt/OpenOrbis" >> $GITHUB_ENV
+
+      - name: Compile project and build PKG
+        run: |
+          mkdir build && cd build
+          cmake ..
+          make
+
+      - name: Upload generated PKG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eden-Otimizado-PKG
+          path: "**/*.pkg"
