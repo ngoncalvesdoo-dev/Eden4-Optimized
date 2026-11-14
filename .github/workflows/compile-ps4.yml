@@ -25,12 +25,28 @@ jobs:
 
       - name: Repack Valid Fake PKG with Custom Configs
         run: |
-          $PkgTool = (Get-ChildItem -Path tools\pkgtool -Filter "*PkgTool*.exe" -Recurse | Select-Object -First 1).FullName
           $BasePkg = (Get-ChildItem -Path base_pkg -Filter "*.pkg" | Select-Object -First 1).FullName
           $Passcode = "00000000000000000000000000000000"
 
-          & $PkgTool pkg_makegp4 --passcode $Passcode extracted $BasePkg
+          $ExeTool = Get-ChildItem -Path tools\pkgtool -Filter "*PkgTool*.exe" -Recurse | Select-Object -First 1
+          $DllTool = Get-ChildItem -Path tools\pkgtool -Filter "PkgTool.Core.dll" -Recurse | Select-Object -First 1
 
+          function Run-PkgTool {
+              param([string[]]$ToolArgs)
+              if ($ExeTool) {
+                  & $ExeTool.FullName @ToolArgs
+              } elseif ($DllTool) {
+                  dotnet $DllTool.FullName @ToolArgs
+              } else {
+                  Get-ChildItem -Path tools\pkgtool -Recurse
+                  throw "PkgTool binary not found"
+              }
+          }
+
+          # Extract clean PKG into valid GP4 project
+          Run-PkgTool @("pkg_makegp4", "--passcode", $Passcode, "extracted", $BasePkg)
+
+          # Create config folder with both ps4.ini and qt-config.ini inside extracted package
           New-Item -ItemType Directory -Force -Path "extracted\config" | Out-Null
           if (Test-Path "ps4.ini") {
               Copy-Item "ps4.ini" -Destination "extracted\ps4.ini" -Force
@@ -38,6 +54,7 @@ jobs:
               Copy-Item "ps4.ini" -Destination "extracted\config\qt-config.ini" -Force
           }
 
+          # Register new files in the GP4 project so PS4 installs without CE-35659-8
           $Gp4File = (Get-ChildItem -Path extracted -Filter "*.gp4" -Recurse | Select-Object -First 1).FullName
           [xml]$gp4 = Get-Content $Gp4File
           $filesNode = $gp4.psproject.files
@@ -53,7 +70,8 @@ jobs:
           }
           $gp4.Save($Gp4File)
 
-          & $PkgTool pkg_build $Gp4File Eden4-PS4-Valid-Optimized.pkg
+          # Build valid PS4 FPKG
+          Run-PkgTool @("pkg_build", $Gp4File, "Eden4-PS4-Valid-Optimized.pkg")
 
       - name: Upload Valid PS4 PKG
         uses: actions/upload-artifact@v4
