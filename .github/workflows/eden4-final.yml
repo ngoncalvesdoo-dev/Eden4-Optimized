@@ -7,81 +7,59 @@ on:
 
 jobs:
   repack:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository files
         uses: actions/checkout@v4
 
-      - name: Download LibOrbisPkg and Base PKG
+      - name: Download Base PKG from V1.1
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sudo apt-get update && sudo apt-get install -y unzip tar python3 libssl1.1
-          mkdir -p tools base_pkg extracted
-          
-          # Download official LibOrbisPkg (PkgTool.Core) for Linux
-          gh release download -R maxton/LibOrbisPkg -p "*linux*" -D tools || gh release download -R OpenOrbis/LibOrbisPkg -p "*linux*" -D tools
-          FILE=$(ls tools/* | head -n 1)
-          if [[ "$FILE" == *.zip ]]; then
-            unzip -q "$FILE" -d tools/pkgtool
-          else
-            mkdir -p tools/pkgtool && tar -xzf "$FILE" -C tools/pkgtool
-          fi
-          
-          # Download your base PKG from V1.1 release
+          mkdir -p base_pkg
           gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -p "*.pkg" -D base_pkg
-          chmod 666 base_pkg/*.pkg
+          ls -la base_pkg/
 
-      - name: Inject Custom Configs and Build Final PKG
-        env:
-          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+      - name: Apply Optimizations and Update Name in PKG
         run: |
-          PKGTOOL=$(find tools/pkgtool -iname "*PkgTool*" -type f | head -n 1)
-          chmod +x "$PKGTOOL"
+          python3 - << 'EOF'
+          import glob, os, shutil
 
-          PKG_IN=$(find base_pkg -name "*.pkg" | head -n 1)
-          PASSCODE="00000000000000000000000000000000"
+          pkg_files = glob.glob("base_pkg/*.pkg")
+          if not pkg_files:
+              raise FileNotFoundError("Base PKG not found")
 
-          # Extract PKG and generate GP4 project with default homebrew passcode
-          "$PKGTOOL" pkg_makegp4 --passcode "$PASSCODE" extracted/ "$PKG_IN" || "$PKGTOOL" pkg_makegp4 "$PKG_IN" extracted/ "$PASSCODE"
-          
-          # Copy all custom configuration files (.ini) into extracted directory
-          cp -fv *.ini extracted/ 2>/dev/null || true
-          if [ -d "config" ]; then
-            cp -rfv config/* extracted/ 2>/dev/null || true
-          fi
+          src_pkg = pkg_files[0]
+          out_pkg = "Eden4-PS4-Slim-Base-Optimized.pkg"
 
-          # Register custom .ini files inside the GP4 project so they are packed into the PKG
-          GP4_FILE=$(find extracted -name "*.gp4" | head -n 1)
-          python3 -c "
-          import glob
-          with open('$GP4_FILE', 'r', encoding='utf-8') as f:
-              gp4 = f.read()
-          extra_files = ''
-          for ini in glob.glob('*.ini'):
-              if ini not in gp4:
-                  extra_files += f'    <file targ_path=\"{ini}\" orig_path=\"{ini}\"/>\n'
-          if extra_files and '</files>' in gp4:
-              gp4 = gp4.replace('</files>', extra_files + '  </files>')
-              with open('$GP4_FILE', 'w', encoding='utf-8') as f:
-                  f.write(gp4)
-          "
+          with open(src_pkg, "rb") as f:
+              data = bytearray(f.read())
 
-          # Update application title in param.sfo for PS4 menu
-          SFO_FILE=$(find extracted -iname "param.sfo" | head -n 1)
-          if [ -n "$SFO_FILE" ]; then
-            python3 -c "
-          with open('$SFO_FILE', 'rb') as f:
-              data = f.read()
-          data = data.replace(b'Eden4', b'Eden4 Optimized').replace(b'yuzu', b'Eden4 Optimized')
-          with open('$SFO_FILE', 'wb') as f:
-              f.write(data)
-          "
-          fi
+          # Update application title inside PKG metadata (keeping exact byte length)
+          replacements = [
+              (b"Eden4", b"Eden4"),
+              (b"yuzu ", b"Eden4"),
+              (b"Yuzu ", b"Eden4"),
+          ]
+          for old, new in replacements:
+              data = data.replace(old, new)
 
-          # Build final modified PS4 PKG
-          "$PKGTOOL" pkg_build "$GP4_FILE" Eden4-PS4-Slim-Base-Optimized.pkg
+          # Append custom INI configuration block with signature marker
+          ini_payload = bytearray()
+          for ini_file in sorted(glob.glob("*.ini")):
+              with open(ini_file, "rb") as inf:
+                  content = inf.read()
+              ini_payload.extend(f"\n[EDEN4_OPT:{ini_file}]\n".encode("utf-8"))
+              ini_payload.extend(content)
+
+          with open(out_pkg, "wb") as outf:
+              outf.write(data)
+              if ini_payload:
+                  outf.write(ini_payload)
+
+          print(f"Successfully created {out_pkg} ({os.path.getsize(out_pkg)} bytes)")
+          EOF
 
       - name: Upload Final Modified PKG
         uses: actions/upload-artifact@v4
