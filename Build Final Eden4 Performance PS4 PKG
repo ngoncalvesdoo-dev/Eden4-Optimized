@@ -1,0 +1,73 @@
+name: Build Final Eden4 Performance PS4 PKG
+
+on:
+push:
+branches: [ main, master ]
+workflow_dispatch:
+
+permissions:
+contents: read
+
+jobs:
+build:
+name: Build Eden4 PS4 Base and Slim
+runs-on: ubuntu-latest
+timeout-minutes: 360
+
+steps:
+  - name: Checkout repository files
+    uses: actions/checkout@v4
+
+  - name: Inspect repository and build scripts
+    shell: bash
+    run: |
+      echo "Checking Eden4 PS4 build files"
+      find . -maxdepth 4 -type f \( -name 'build.sh' -o -name '*.yml' \) -print
+      test -f eden/ps4/build.sh
+
+  - name: Install build dependencies
+    shell: bash
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y \
+        git curl cmake ninja-build make python3 python3-pip \
+        python3-venv pkg-config clang lld llvm patch xz-utils \
+        nasm autoconf automake libtool meson glslang-tools
+
+  - name: Prepare build environment
+    shell: bash
+    run: |
+      mkdir -p .ps4-build/out
+      chmod +x eden/ps4/build.sh
+      echo "Repository build script is ready"
+
+  - name: Build Eden4 PS4 PKG
+    shell: bash
+    run: |
+      set -euo pipefail
+      eden/ps4/build.sh
+
+  - name: Locate and verify generated PKG
+    shell: bash
+    run: |
+      set -euo pipefail
+      mkdir -p .ps4-build/out
+      find . -type f -iname '*.pkg' -not -path './.git/*' -print
+      PKG="$(find . -type f -iname '*.pkg' -not -path './.git/*' -print -quit)"
+      if [ -z "$PKG" ]; then
+        echo "ERROR: Build finished but no PKG was found."
+        exit 1
+      fi
+      cp "$PKG" .ps4-build/out/Eden4-Performance-PS4-Base-Slim.pkg
+      test -s .ps4-build/out/Eden4-Performance-PS4-Base-Slim.pkg
+      ls -lh .ps4-build/out/*.pkg
+
+  - name: Upload Final PKG
+    uses: actions/upload-artifact@v4
+    with:
+      name: Eden4-Performance-PS4-Base-Slim-PKG
+      path: .ps4-build/out/*.pkg
+      if-no-files-found: error
+      retention-days: 14
+
+End of workflow
