@@ -46,23 +46,32 @@ jobs:
             exit 1
           fi
 
-          # Extract original PKG
-          "$PKGTOOL" pkg_extract "$PKG_IN" extracted/
-          echo "=== Extracted structure ==="
-          find extracted -maxdepth 3
+          # Extract PKG and generate GP4 project directly from original PKG
+          "$PKGTOOL" pkg_makegp4 extracted/ "$PKG_IN"
           
-          TARGET_DIR="extracted"
-          if [ -d "extracted/Image0" ]; then
-            TARGET_DIR="extracted/Image0"
-          fi
-
-          # Copy all custom configuration files (.ini) into the PKG
-          cp -fv *.ini "$TARGET_DIR/" 2>/dev/null || true
+          # Copy all custom configuration files (.ini) into extracted directory
+          cp -fv *.ini extracted/ 2>/dev/null || true
           if [ -d "config" ]; then
-            cp -rfv config/* "$TARGET_DIR/" 2>/dev/null || true
+            cp -rfv config/* extracted/ 2>/dev/null || true
           fi
 
-          # Update application title in param.sfo if found
+          # Register custom .ini files inside the GP4 project so they are packed into the PKG
+          GP4_FILE=$(find extracted -name "*.gp4" | head -n 1)
+          python3 -c "
+          import glob, os
+          with open('$GP4_FILE', 'r', encoding='utf-8') as f:
+              gp4 = f.read()
+          extra_files = ''
+          for ini in glob.glob('*.ini'):
+              if ini not in gp4:
+                  extra_files += f'    <file targ_path=\"{ini}\" orig_path=\"{ini}\"/>\n'
+          if extra_files and '</files>' in gp4:
+              gp4 = gp4.replace('</files>', extra_files + '  </files>')
+              with open('$GP4_FILE', 'w', encoding='utf-8') as f:
+                  f.write(gp4)
+          "
+
+          # Update application title in param.sfo for PS4 menu
           SFO_FILE=$(find extracted -iname "param.sfo" | head -n 1)
           if [ -n "$SFO_FILE" ]; then
             python3 -c "
@@ -74,9 +83,8 @@ jobs:
           "
           fi
 
-          # Generate GP4 project from extracted folder and build final PS4 PKG
-          "$PKGTOOL" pkg_makegp4 extracted/ project.gp4 || "$PKGTOOL" pkg_makegp4 "$TARGET_DIR" project.gp4
-          "$PKGTOOL" pkg_build project.gp4 Eden4-PS4-Slim-Base-Optimized.pkg
+          # Build final modified PS4 PKG
+          "$PKGTOOL" pkg_build "$GP4_FILE" Eden4-PS4-Slim-Base-Optimized.pkg
 
       - name: Upload Final Modified PKG
         uses: actions/upload-artifact@v4
