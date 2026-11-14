@@ -31,7 +31,7 @@ jobs:
           
           # Download your base PKG from V1.1 release
           gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -p "*.pkg" -D base_pkg
-          ls -la base_pkg/
+          chmod 666 base_pkg/*.pkg
 
       - name: Inject Custom Configs and Build Final PKG
         env:
@@ -41,13 +41,10 @@ jobs:
           chmod +x "$PKGTOOL"
 
           PKG_IN=$(find base_pkg -name "*.pkg" | head -n 1)
-          if [ -z "$PKG_IN" ]; then
-            echo "No PKG file found in V1.1 release."
-            exit 1
-          fi
+          PASSCODE="00000000000000000000000000000000"
 
-          # Extract PKG and generate GP4 project directly from original PKG
-          "$PKGTOOL" pkg_makegp4 extracted/ "$PKG_IN"
+          # Extract PKG and generate GP4 project with default homebrew passcode
+          "$PKGTOOL" pkg_makegp4 --passcode "$PASSCODE" extracted/ "$PKG_IN" || "$PKGTOOL" pkg_makegp4 "$PKG_IN" extracted/ "$PASSCODE"
           
           # Copy all custom configuration files (.ini) into extracted directory
           cp -fv *.ini extracted/ 2>/dev/null || true
@@ -58,7 +55,7 @@ jobs:
           # Register custom .ini files inside the GP4 project so they are packed into the PKG
           GP4_FILE=$(find extracted -name "*.gp4" | head -n 1)
           python3 -c "
-          import glob, os
+          import glob
           with open('$GP4_FILE', 'r', encoding='utf-8') as f:
               gp4 = f.read()
           extra_files = ''
