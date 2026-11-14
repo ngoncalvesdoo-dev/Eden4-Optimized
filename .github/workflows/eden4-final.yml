@@ -46,8 +46,10 @@ jobs:
             exit 1
           fi
 
-          # Extract original PKG (handles both direct files and Sc0/Image0 layout)
+          # Extract original PKG
           "$PKGTOOL" pkg_extract "$PKG_IN" extracted/
+          echo "=== Extracted structure ==="
+          find extracted -maxdepth 3
           
           TARGET_DIR="extracted"
           if [ -d "extracted/Image0" ]; then
@@ -60,23 +62,21 @@ jobs:
             cp -rfv config/* "$TARGET_DIR/" 2>/dev/null || true
           fi
 
-          # Update application title in param.sfo for PS4 menu
-          SFO_FILE=$(find extracted -name "param.sfo" | head -n 1)
-          python3 -c "
+          # Update application title in param.sfo if found
+          SFO_FILE=$(find extracted -iname "param.sfo" | head -n 1)
+          if [ -n "$SFO_FILE" ]; then
+            python3 -c "
           with open('$SFO_FILE', 'rb') as f:
               data = f.read()
           data = data.replace(b'Eden4', b'Eden4 Optimized').replace(b'yuzu', b'Eden4 Optimized')
           with open('$SFO_FILE', 'wb') as f:
               f.write(data)
           "
-
-          # Generate GP4 project and build final modified PS4 PKG
-          "$PKGTOOL" pkg_makegp4 "$TARGET_DIR" project.gp4 || true
-          if [ -f "project.gp4" ]; then
-            "$PKGTOOL" pkg_build project.gp4 Eden4-PS4-Slim-Base-Optimized.pkg
-          else
-            "$PKGTOOL" pkg_build "$SFO_FILE" "$TARGET_DIR" Eden4-PS4-Slim-Base-Optimized.pkg
           fi
+
+          # Generate GP4 project from extracted folder and build final PS4 PKG
+          "$PKGTOOL" pkg_makegp4 extracted/ project.gp4 || "$PKGTOOL" pkg_makegp4 "$TARGET_DIR" project.gp4
+          "$PKGTOOL" pkg_build project.gp4 Eden4-PS4-Slim-Base-Optimized.pkg
 
       - name: Upload Final Modified PKG
         uses: actions/upload-artifact@v4
