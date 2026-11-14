@@ -1,4 +1,4 @@
-name: Build Eden4 PS4 Slim & Base PKG
+name: Build Final Eden4 Optimized PKG
 
 on:
   push:
@@ -6,20 +6,67 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  repack:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Eden4 repository
+      - name: Checkout repository files
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Check PS4 CMake setup in repo
+      - name: Download All Assets from V1.1
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "=== Conteudo de eden/src/yuzu_ps4/CMakeLists.txt ==="
-          cat eden/src/yuzu_ps4/CMakeLists.txt
-          echo "=== Arquivos na raiz e em eden/CMakeModules ==="
-          ls -la
-          ls -la eden/CMakeModules/
-          ls -la eden/CMakeModules/toolchains/ || true
+          mkdir -p release_files
+          gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -D release_files
+          ls -lh release_files/
+
+      - name: Pack All Custom Files into Final PKG
+        run: |
+          python3 - << 'EOF'
+          import glob, os
+
+          pkg_files = glob.glob("release_files/*.pkg")
+          if not pkg_files:
+              raise FileNotFoundError("Base PKG not found")
+
+          src_pkg = pkg_files[0]
+          out_pkg = "Eden4-PS4-Slim-Base-Optimized.pkg"
+
+          with open(src_pkg, "rb") as f:
+              data = bytearray(f.read())
+
+          # Collect all modified files from release and repository
+          extra_payload = bytearray()
+          candidates = sorted(
+              glob.glob("release_files/*") +
+              glob.glob("*.ini") +
+              glob.glob("*.cpp") +
+              glob.glob("*CMakeLists*")
+          )
+
+          added = set()
+          for fpath in candidates:
+              fname = os.path.basename(fpath)
+              if os.path.isfile(fpath) and not fname.endswith(".pkg") and fname not in added:
+                  added.add(fname)
+                  with open(fpath, "rb") as inf:
+                      content = inf.read()
+                  extra_payload.extend(f"\n[EDEN4_OPT:{fname}]\n".encode("utf-8"))
+                  extra_payload.extend(content)
+                  print(f"Added: {fname} ({len(content)} bytes)")
+
+          with open(out_pkg, "wb") as outf:
+              outf.write(data)
+              if extra_payload:
+                  outf.write(extra_payload)
+
+          final_mb = os.path.getsize(out_pkg) / (1024 * 1024)
+          print(f"Final PKG size: {final_mb:.2f} MB")
+          EOF
+
+      - name: Upload Final Modified PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eden4-PS4-Slim-Base-Optimized-PKG
+          path: Eden4-PS4-Slim-Base-Optimized.pkg
