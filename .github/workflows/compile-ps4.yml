@@ -18,13 +18,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Force -Path tools, base_pkg, extracted | Out-Null
-          gh release download -R maxton/LibOrbisPkg -p "*win*" -D tools
-          Expand-Archive -Path tools\*.zip -DestinationPath tools\pkgtool -Force
+          gh release download -R maxton/LibOrbisPkg -p "*.zip" -D tools
+          $ZipFile = (Get-ChildItem -Path tools -Filter "*.zip" | Where-Object { $_.Name -notmatch "osx|linux|mac" } | Select-Object -First 1).FullName
+          Expand-Archive -Path $ZipFile -DestinationPath tools\pkgtool -Force
           gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -p "*.pkg" -D base_pkg
 
       - name: Repack Valid Fake PKG with Custom Configs
         run: |
-          $PkgTool = (Get-ChildItem -Path tools\pkgtool -Filter "PkgTool.Core.exe" -Recurse | Select-Object -First 1).FullName
+          $PkgTool = (Get-ChildItem -Path tools\pkgtool -Filter "*PkgTool*.exe" -Recurse | Select-Object -First 1).FullName
           $BasePkg = (Get-ChildItem -Path base_pkg -Filter "*.pkg" | Select-Object -First 1).FullName
           $Passcode = "00000000000000000000000000000000"
 
