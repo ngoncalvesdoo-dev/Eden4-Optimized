@@ -1,4 +1,4 @@
-name: Build Final Eden4 Optimized PKG
+name: Build Valid PS4 FPKG (Windows)
 
 on:
   push:
@@ -6,67 +6,56 @@ on:
   workflow_dispatch:
 
 jobs:
-  repack:
-    runs-on: ubuntu-latest
+  build-fpkg:
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository files
         uses: actions/checkout@v4
 
-      - name: Download All Assets from V1.1
+      - name: Download LibOrbisPkg (Windows) and Base PKG
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p release_files
-          gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -D release_files
-          ls -lh release_files/
+          New-Item -ItemType Directory -Force -Path tools, base_pkg, extracted | Out-Null
+          gh release download -R maxton/LibOrbisPkg -p "*win*" -D tools
+          Expand-Archive -Path tools\*.zip -DestinationPath tools\pkgtool -Force
+          gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -p "*.pkg" -D base_pkg
 
-      - name: Pack All Custom Files into Final PKG
+      - name: Repack Valid Fake PKG with Custom Configs
         run: |
-          python3 - << 'EOF'
-          import glob, os
+          $PkgTool = (Get-ChildItem -Path tools\pkgtool -Filter "PkgTool.Core.exe" -Recurse | Select-Object -First 1).FullName
+          $BasePkg = (Get-ChildItem -Path base_pkg -Filter "*.pkg" | Select-Object -First 1).FullName
+          $Passcode = "00000000000000000000000000000000"
 
-          pkg_files = glob.glob("release_files/*.pkg")
-          if not pkg_files:
-              raise FileNotFoundError("Base PKG not found")
+          & $PkgTool pkg_makegp4 --passcode $Passcode extracted $BasePkg
 
-          src_pkg = pkg_files[0]
-          out_pkg = "Eden4-PS4-Slim-Base-Optimized.pkg"
+          New-Item -ItemType Directory -Force -Path "extracted\config" | Out-Null
+          if (Test-Path "ps4.ini") {
+              Copy-Item "ps4.ini" -Destination "extracted\ps4.ini" -Force
+              Copy-Item "ps4.ini" -Destination "extracted\config\ps4.ini" -Force
+              Copy-Item "ps4.ini" -Destination "extracted\config\qt-config.ini" -Force
+          }
 
-          with open(src_pkg, "rb") as f:
-              data = bytearray(f.read())
+          $Gp4File = (Get-ChildItem -Path extracted -Filter "*.gp4" -Recurse | Select-Object -First 1).FullName
+          [xml]$gp4 = Get-Content $Gp4File
+          $filesNode = $gp4.psproject.files
+          Get-ChildItem -Path extracted -Recurse -File | Where-Object { $_.Extension -notin ".gp4", ".pkg" } | ForEach-Object {
+              $relPath = $_.FullName.Substring((Resolve-Path "extracted").Path.Length + 1).Replace("\", "/")
+              $exists = $filesNode.file | Where-Object { $_.targ_path -eq $relPath }
+              if (-not $exists) {
+                  $newFile = $gp4.CreateElement("file")
+                  $newFile.SetAttribute("targ_path", $relPath)
+                  $newFile.SetAttribute("orig_path", $relPath)
+                  $filesNode.AppendChild($newFile) | Out-Null
+              }
+          }
+          $gp4.Save($Gp4File)
 
-          # Collect all modified files from release and repository
-          extra_payload = bytearray()
-          candidates = sorted(
-              glob.glob("release_files/*") +
-              glob.glob("*.ini") +
-              glob.glob("*.cpp") +
-              glob.glob("*CMakeLists*")
-          )
+          & $PkgTool pkg_build $Gp4File Eden4-PS4-Valid-Optimized.pkg
 
-          added = set()
-          for fpath in candidates:
-              fname = os.path.basename(fpath)
-              if os.path.isfile(fpath) and not fname.endswith(".pkg") and fname not in added:
-                  added.add(fname)
-                  with open(fpath, "rb") as inf:
-                      content = inf.read()
-                  extra_payload.extend(f"\n[EDEN4_OPT:{fname}]\n".encode("utf-8"))
-                  extra_payload.extend(content)
-                  print(f"Added: {fname} ({len(content)} bytes)")
-
-          with open(out_pkg, "wb") as outf:
-              outf.write(data)
-              if extra_payload:
-                  outf.write(extra_payload)
-
-          final_mb = os.path.getsize(out_pkg) / (1024 * 1024)
-          print(f"Final PKG size: {final_mb:.2f} MB")
-          EOF
-
-      - name: Upload Final Modified PKG
+      - name: Upload Valid PS4 PKG
         uses: actions/upload-artifact@v4
         with:
-          name: Eden4-PS4-Slim-Base-Optimized-PKG
-          path: Eden4-PS4-Slim-Base-Optimized.pkg
+          name: Eden4-PS4-Valid-Optimized-PKG
+          path: Eden4-PS4-Valid-Optimized.pkg
