@@ -1,68 +1,97 @@
-name: Build Final Eden4 Optimized PKG
-
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
-
 jobs:
-  repack:
-    runs-on: ubuntu-latest
+  build:
+    name: Build Eden4 PS4 Base and Slim
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:26.04
+timeout-minutes: 360
 
-    steps:
-      - name: Checkout repository files
-        uses: actions/checkout@v4
+env:
+  PS4_BUILD_ROOT: ${{ github.workspace }}/.ps4-build
+  OPENORBIS: /opt/pacbrew/ps4/openorbis
+  EDEN_PKG_SUFFIX: ${{ inputs.package_suffix || '-optimized' }}
+  DEBIAN_FRONTEND: noninteractive
 
-      - name: Download Base PKG from V1.1
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p base_pkg
-          gh release download V1.1 -R ngoncalvesdoo-dev/Eden4-Optimized -p "*.pkg" -D base_pkg
-          ls -la base_pkg/
+steps:
+  - name: Checkout repository files
+    uses: actions/checkout@v4
 
-      - name: Apply Optimizations and Update Name in PKG
-        run: |
-          python3 - << 'EOF'
-          import glob, os, shutil
+  - name: Install build dependencies
+    shell: bash
+    run: |
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        ca-certificates curl git patch xz-utils zstd \
+        clang-21 lld-21 llvm-21 libclang-rt-21-dev \
+        cmake ninja-build make nasm autoconf automake libtool \
+        pkg-config python3 python3-pip python3-venv python3-pil \
+        python3-mako python3-yaml meson glslang-tools \
+        libdrm-dev libxml2-16
 
-          pkg_files = glob.glob("base_pkg/*.pkg")
-          if not pkg_files:
-              raise FileNotFoundError("Base PKG not found")
+  - name: Install OpenOrbis toolchain
+    shell: bash
+    run: |
+      python3 tools/pacbrew/fetch-pacbrew.py
+      python3 tools/pacbrew/install-pacbrew.py
+      test -f "$OPENORBIS/ps4vars.sh"
 
-          src_pkg = pkg_files[0]
-          out_pkg = "Eden4-PS4-Slim-Base-Optimized.pkg"
+  - name: Build PS4 C++ runtime
+    shell: bash
+    run: |
+      runtime/toolchain/build-libcxx.sh
+      runtime/toolchain/build-runtime.sh
 
-          with open(src_pkg, "rb") as f:
-              data = bytearray(f.read())
+  - name: Prepare Mesa and libdrm
+    shell: bash
+    run: |
+      mkdir -p "$PS4_BUILD_ROOT/src"
+      cd "$PS4_BUILD_ROOT/src"
 
-          # Update application title inside PKG metadata (keeping exact byte length)
-          replacements = [
-              (b"Eden4", b"Eden4"),
-              (b"yuzu ", b"Eden4"),
-              (b"Yuzu ", b"Eden4"),
-          ]
-          for old, new in replacements:
-              data = data.replace(old, new)
+      curl -fL --retry 3 \
+        https://archive.mesa3d.org/mesa-26.0.8.tar.xz \
+        -o mesa-26.0.8.tar.xz
 
-          # Append custom INI configuration block with signature marker
-          ini_payload = bytearray()
-          for ini_file in sorted(glob.glob("*.ini")):
-              with open(ini_file, "rb") as inf:
-                  content = inf.read()
-              ini_payload.extend(f"\n[EDEN4_OPT:{ini_file}]\n".encode("utf-8"))
-              ini_payload.extend(content)
+      tar -xf mesa-26.0.8.tar.xz
+      mv mesa-26.0.8 mesa
 
-          with open(out_pkg, "wb") as outf:
-              outf.write(data)
-              if ini_payload:
-                  outf.write(ini_payload)
+      cd mesa
+      patch -p1 < "$GITHUB_WORKSPACE/runtime/patches/mesa-ps4.patch"
 
-          print(f"Successfully created {out_pkg} ({os.path.getsize(out_pkg)} bytes)")
-          EOF
+      cp "$GITHUB_WORKSPACE/runtime/port/mesa/ac_ps4_drm.c" src/amd/common/
 
-      - name: Upload Final Modified PKG
-        uses: actions/upload-artifact@v4
-        with:
-          name: Eden4-PS4-Slim-Base-Optimized-PKG
-          path: Eden4-PS4-Slim-Base-Optimized.pkg
+      cd "$PS4_BUILD_ROOT/src"
+      git clone --depth 1 --branch libdrm-2.4.125 \
+        https://gitlab.freedesktop.org/mesa/drm.git libdrm
+
+  - name: Prepare Mesa Python environment
+    shell: bash
+    run: |
+      python3 -m venv "$PS4_BUILD_ROOT/mesa-venv"
+      "$PS4_BUILD_ROOT/mesa-venv/bin/pip" install --upgrade pip
+      "$PS4_BUILD_ROOT/mesa-venv/bin/pip" install meson mako pyyaml
+
+  - name: Build Mesa RADV
+    shell: bash
+    run: |
+      runtime/scripts/build-mesa.sh setup
+
+  - name: Build and package Eden4
+    shell: bash
+    run: |
+      eden/ps4/build.sh
+
+  - name: Verify generated PKG
+    shell: bash
+    run: |
+      set -e
+      ls -lh .ps4-build/out/*.pkg
+      test -s "$(find .ps4-build/out -name '*.pkg' -print -quit)"
+      echo "PKG build artifact found."
+
+  - name: Upload Final Modified PKG
+    uses: actions/upload-artifact@v4
+    with:
+      name: Eden4-Performance-PS4-Base-Slim-PKG
+      path: .ps4-build/out/*.pkg
+      if-no-files-found: error
+      retention-days: 14
